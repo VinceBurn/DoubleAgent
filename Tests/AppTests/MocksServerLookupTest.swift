@@ -1,0 +1,213 @@
+//
+//  File.swift
+//
+//
+//  Created by Vincent Bernier on 2021-02-28.
+//
+
+@testable import App
+import Codability
+import XCTVapor
+
+// deal with basiAuth header ??
+// Add Matching on request body, like in a post with json or text, use content-type to match
+// improve multiple match error, to help diagnostic the input data set
+// improve not found error to include request information
+
+final class MocksServerLookupTest: MocksServerTestCase
+{
+    func assertCall(
+        _ method: HTTPMethod,
+        _ path: String,
+        headers: HTTPHeaders = [:],
+        response responseBody: String,
+        message: String = "",
+        function: String = #function
+    ) throws
+    {
+        try app.test(method, path, headers: headers)
+        { response in
+            XCTAssertEqual(response.body.string, responseBody, "\(message) :: test -> \(function)")
+        }
+    }
+
+    func assertErrorNotFound(
+        _ method: HTTPMethod,
+        _ path: String,
+        message: String = "",
+        function: String = #function
+    ) throws
+    {
+        try app.test(method, path) { XCTAssertEqual($0.status, .notFound, "\(message) :: test -> \(function)") }
+    }
+
+    func assertErrorConflict(
+        _ method: HTTPMethod,
+        _ path: String,
+        headers: HTTPHeaders = [:],
+        message: String = "",
+        function: String = #function
+    ) throws
+    {
+        try app.test(method, path, headers: headers) { XCTAssertEqual($0.status, .conflict, "\(message) :: test -> \(function)") }
+    }
+
+    // MARK: - Matching on Path
+    func test_givenDynamicPath_whenPathToShort_thenNotFound() throws
+    {
+        try registerMocks(CallInfo.stub(path: "some/:id", method: .GET))
+        try registerMocks(CallInfo.stub(path: "other/*", method: .GET))
+        try assertErrorNotFound(.GET, "some", message: "Dynamic path needs to be present / have a value")
+        try assertErrorNotFound(.GET, "other", message: "Dynamic path needs to be present / have a value")
+    }
+
+    func test_givenDynamicPath_whenLookup_thenMatchOnAllNonDynamicPath() throws
+    {
+        try registerMocks(CallInfo.stub(path: "some/:id/dynamic", method: .GET, response: CallResponse.stub(body: "dynamic")))
+        try registerMocks(CallInfo.stub(path: "some/*/all", method: .GET, response: CallResponse.stub(body: "all")))
+        try assertCall(.GET, "some/1234/dynamic", response: "dynamic", message: ":name can be use as a wildcard")
+        try assertCall(.GET, "some/v_134_df/all", response: "all", message: "* can be use as a wildcard")
+    }
+
+    func test_givenDynamicAndStaticPath_whenBothMatch_theReturnStatic() throws
+    {
+        try registerMocks(CallInfo.stub(path: "some/*/all", method: .GET, response: CallResponse.stub(body: "not")))
+        try registerMocks(CallInfo.stub(path: "some/123/all", method: .GET, response: CallResponse.stub(body: "good")))
+        try assertCall(.GET, "some/123/all", response: "good", message: "Fully defined path has precedence over wildcard")
+    }
+
+    func test_givenCatchAllInPath_whenCreation_thenError() throws
+    {
+        try registerMocks(CallInfo.stub(path: "some/**/stuff"), afterResponse: { response in
+            XCTAssert(response.status != .ok)
+            XCTAssertEqual(response.status, .preconditionFailed)
+            XCTAssertTrue(response.body.string.contains("** is not a valid wildcard. Use * or :paramName instead"))
+        })
+    }
+
+    func test_givenPathSubstitution_willMatchOnlyForSubstitution() throws
+    {
+        try registerMocks(.stub(path: "bob/:id", method: .GET, lookup: .stub(path: [":id": "123"]), response: .stub(body: "good")))
+        try assertErrorNotFound(.GET, "bob/no", message: "Dynamic path with replacement is not a wildcard")
+        try assertCall(.GET, "bob/123", response: "good", message: "Only match with lookup value")
+    }
+
+    func test_givenPathWildcard_whenMultipleMatch_thenError() throws
+    {
+        try registerMocks([.stub(path: "a/*/c"), .stub(path: "a/b/*")])
+        try assertErrorConflict(.GET, "a/b/c", message: "Multiple wild card path match is a conflict error")
+    }
+
+    // MARK: - Matching on Query
+    func test_givenOnlyPath_whenQuery_thenMatch() throws
+    {
+        try registerMocks(.stub(path: "bob", method: .GET, response: .stub(body: "good")))
+        try assertCall(.GET, "bob?bob=true&if=boris", response: "good", message: "Query only matters with substitution")
+    }
+
+    func test_givenPathAndQuery_thenMatchOnBoth() throws
+    {
+        let baseCall = CallInfo.stub(path: "same/path", method: .GET)
+        var withoutQuery = baseCall
+        withoutQuery.response = .stub(body: "without")
+        var with1Query = baseCall
+        with1Query.lookup = .stub(query: ["id": "1"])
+        with1Query.response = .stub(body: "1 query")
+        var with2Query = baseCall
+        with2Query.lookup = .stub(query: ["id": "12", "bob": "true"])
+        with2Query.response = .stub(body: "2 query")
+        var with3Query = baseCall
+        with3Query.lookup = .stub(query: ["id": "12", "bob": "true", "p": "1"])
+        with3Query.response = .stub(body: "3 query")
+
+        try registerMocks([withoutQuery, with1Query, with2Query, with3Query])
+        try assertCall(.GET, "same/path?id=2", response: "without", message: "Query don't match")
+        try assertCall(.GET, "same/path?id=12", response: "without", message: "Lookup have 2 query item, finding only one is not a match")
+        try assertCall(.GET, "same/path?bob=true", response: "without", message: "Lookup have 2 query item, finding only one is not a match")
+        try assertCall(.GET, "same/path?id=1", response: "1 query", message: "The full 1 query item do match")
+        try assertCall(.GET, "same/path?id=12&bob=true", response: "2 query", message: "The full 2 query item do match")
+        try assertCall(.GET, "same/path?p=1&id=12&bob=true", response: "3 query", message: "2 and 3 query match, the one with more replacement wins")
+        try assertCall(.GET, "same/path?id=1&p=1&bob=true&x=false", response: "1 query", message: "Extra query items that don't match are ignore for resolution")
+        try assertErrorNotFound(.GET, "other/path?id=1", message: "Query are not considered if the path don't match")
+    }
+
+    func test_givenEscapedCharacterInQuery_thenMatchWithNonEscapedVersion() throws
+    {
+        let call = CallInfo.stub(lookup: .stub(query: ["esc": "+@ %41%42"]), response: .stub(body: "ok"))
+        try registerMocks(call)
+        try assertCall(call.method, "\(call.path)?esc=%2B%40%20AB", response: "ok")
+    }
+
+    func test_exactVsWildCardPath_whenQuery() throws
+    {
+        let exact = CallInfo.stub(path: "a/b/c", response: .stub(body: "exact"))
+        let sub = CallInfo.stub(path: "a/:id/c", lookup: .stub(path: [":id": "c"]), response: .stub(body: "sub"))
+        let wild = CallInfo.stub(path: "a/*/c", lookup: .stub(query: ["r2": "d2"]), response: .stub(body: "wild"))
+        try registerMocks([wild, exact, sub])
+        try assertCall(exact.method, "a/b/c?r2=d2", response: "exact", message: "Exact path match wins over path wild card *")
+        try assertCall(exact.method, "a/c/c?r2=d2", response: "sub", message: "Path substitution act like exact path")
+        try assertCall(exact.method, "a/x/c?r2=d2", response: "wild", message: "No exact path, the wild card can win")
+    }
+
+    func test_givenMultipleQuery_whenOnlyWildCardPath() throws
+    {
+        let quey1 = CallInfo.stub(path: "a/*/c", lookup: .stub(query: ["1": "a"]), response: .stub(body: "1q"))
+        let quey2 = CallInfo.stub(path: "a/*/c", lookup: .stub(query: ["1": "a", "2": "b"]), response: .stub(body: "2q"))
+
+        try registerMocks([quey1, quey2])
+        try assertCall(quey1.method, "a/b/c?1=a", response: "1q", message: "")
+        try assertCall(quey1.method, "a/b/c?1=a&2=b", response: "2q", message: "")
+    }
+
+    func test_givenQueryMatches_when2DifferentMatchOnEqualSizeQuery_thenError() throws
+    {
+        let call1 = CallInfo.stub(path: "b", lookup: .stub(query: ["a": "1"]))
+        let call2 = CallInfo.stub(path: "b", lookup: .stub(query: ["c": "3"]))
+        try registerMocks([call1, call2])
+        try assertErrorConflict(call1.method, "b?a=1&c=3", message: "Multiple match is a conflict error")
+    }
+
+    // MARK: - Matching on Headers
+    func test_givenOnlyPath_whenHeaders_thenMatch() throws
+    {
+        try registerMocks(CallInfo.stub(path: "path/to/there", method: .GET, response: .stub(body: "ok")))
+        try assertCall(.GET, "path/to/there", headers: ["header": "value"], response: "ok", message: "Headers only matters when in lookup")
+    }
+
+    func test_givenPathAndHeaders_thenMatchOnBoth() throws
+    {
+        let path = "same/path"
+        let baseCall = CallInfo.stub(path: path, method: .PUT)
+        var withoutHeaders = baseCall
+        withoutHeaders.response = .stub(body: "without")
+        var with1Header = baseCall
+        with1Header.lookup = .stub(path: nil, query: nil, headers: ["h": "2o"])
+        with1Header.response = .stub(body: "1 header")
+
+        var with2Headers = baseCall
+        with2Headers.lookup = .stub(path: nil, query: nil, headers: ["h": "2o", "t": "token"])
+        with2Headers.response = .stub(body: "2 headers")
+
+        try registerMocks([withoutHeaders, with1Header, with2Headers])
+        try assertCall(.PUT, path, headers: ["not": "in any lookup"], response: "without", message: "Headers not in any lookup are ignored")
+        try assertCall(.PUT, path, headers: ["t": "token"], response: "without", message: "All headers in lookup must be present to match")
+        try assertCall(.PUT, path, headers: ["h": "2o", "not": "in lookup"], response: "1 header", message: "Mathing on 1 header")
+        try assertCall(.PUT, path, headers: ["t": "token", "h": "2o"], response: "2 headers", message: "Match when 2 headers are in the call")
+    }
+
+    func test_givenHeaderMatches_when2DifferentMatchOnEqualSizeLookup_thenError() throws
+    {
+        let call1 = CallInfo.stub(path: "b", lookup: .stub(headers: ["d": "4"]))
+        let call2 = CallInfo.stub(path: "b", lookup: .stub(headers: ["c": "3"]))
+        try registerMocks([call1, call2])
+        try assertErrorConflict(call1.method, "b", headers: ["d": "4", "c": "3"], message: "Multiple match is a conflict error")
+    }
+
+    func test_givenHeaderOrQueryMathces_when2DifferentMathcOnEqualSizeLookup_thenError() throws
+    {
+        let call1 = CallInfo.stub(path: "b", lookup: .stub(headers: ["d": "4"]))
+        let call2 = CallInfo.stub(path: "b", lookup: .stub(query: ["c": "3"]))
+        try registerMocks([call1, call2])
+        try assertErrorConflict(call1.method, "b?c=3", headers: ["d": "4"], message: "Multiple match is a conflict error")
+    }
+}
