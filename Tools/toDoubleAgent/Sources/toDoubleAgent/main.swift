@@ -58,6 +58,8 @@ struct Env
 
     private func prepareUploadDirectory() throws
     {
+        if isHelp { return }
+
         if FileManager.default.fileExists(atPath: uploadFileDirectory.path)
         {
             if isVerbose
