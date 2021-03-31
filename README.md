@@ -24,6 +24,12 @@ See [Docker usage README](DoubleAgent/Docker_scripts/README.md).
 
 Request information and responses are currently stored in memory.
 
+# Mocking Calls
+
+The mocking server expose an API to manipulate the mock data set. [See API reference](DoubleAgent/README.md).
+
+Use the `toDoubleAgent` command line tool to quickly replace the whole data set. [toDoubleAgent reference](Tools/toDoubleAgent/README.md)
+
 # Possible Workflow
 TODO: revisit
 

@@ -1,25 +1,25 @@
 {
-  "path": "some/path/withWildcard/*/orReplacement/:replaceOnKey/:replace/:namedWildCardCanBeUseForDocumentation",
+  "path": "some/path/withWildcard/*/orReplacement/:replaceOnKey/:replace/:namedWildCardCanBeUseForDocumentationWithoutReplacement",
   "method": "GET",
   "lookup": {
     "header": {
-      "headerKey": "valueAsString MUST be present to match"
+      "headerKey": "valueAsString MUST be present to match",
     },
     "path": {
       ":replaceOnKey": "matchOnlyWithThisString",
-      ":replace": "Named :path componenet not in path dictionary, act the same as * wildcard"
+      ":replace": "some_id",
     },
     "query": {
-      "queryKey": "valueAsString MUST be present to match",
-      "other": "query items not present in the query dictionary are ignored"
+      "queryKey": "valueAsString_MUST_be_present_to_match",
     }
   },
   "response": {
+    "status": 201,
     "headers": {
-      "rule": "All key value pairs in headers dictionary will be added to the response headers",
-      "Content-Type": "Can be specified, if not will be infered base on response.body",
+      "rule-headers": "All key value pairs in headers dictionary will be added to the response headers",
+      "Content-Type": "Can be specified, if not will be infered base on response.body.",
       "Set-Cookie": "Cookie1=1; Domain=cookie1; Secure; HttpOnly"
     },
-    "body": "text/plain and application/json are supported formats. For JSON use a JSON object or array instead of a string here"
+    "body": "text/plain and application/json are supported formats. For JSON use a JSON object or JSON array instead of a string here"
   }
 }
