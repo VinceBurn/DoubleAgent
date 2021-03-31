@@ -1,0 +1,119 @@
+swagger: "2.0"
+info:
+  version: "0.0.1"
+  title: "Mock Server API"
+  description: "You can see a more UI friendly version by using: Swagger Editor at https://editor.swagger.io/#"
+host: "localhost:8080"
+tags:
+- name: "API"
+  description: "Mock Server API"
+paths:
+  /mocks:
+    get:
+      tags:
+      - "API"
+      summary: "Get All CallInfo currently in the server (may take a while)"
+      responses:
+        "200":
+          description: "ok"
+          schema:
+            type: "array"
+            items:
+              $ref: "#/definitions/CallInfo"
+    post:
+      tags:
+      - "API"
+      summary: "Add a new CallInfo to be mocked"
+      consumes:
+      - "application/json"
+      parameters:
+      - in: "body"
+        name: "body"
+        required: true
+        schema:
+          $ref: "#/definitions/CallInfo"
+      responses:
+        "200":
+          description: "ok"
+  /mocks/resetAll:
+    delete:
+      tags:
+      - "API"
+      summary: "Remove all saved CallInfo"
+      responses:
+        "200":
+          description: "ok"
+  /mocks/help:
+    get:
+      tags:
+      - "API"
+      summary: "Print information about the server API"
+      responses:
+        "200":
+          description: "ok"
+          schema:
+            type: "string"
+
+definitions:
+  CallInfo:
+    type: "object"
+    properties:
+      path:
+        type: "string"
+        title: "The path to match"
+        description: "Path is composes of path components sparated by a forward slah (/). Each individaul component can be replace by a wildcard character (*) or be elegible for documentation by prefixing a component with a colon. ex. 'foo/:bar'. Prefixed components will be replace by lookup.path if present, or consider as wildcard otherwise."
+        example: "some/path/withWildcard/*/orReplacement/:replaceOnKey/:replace/:format/:namedWildCardCanBeUseForDocumentation"
+      method:
+        type: "string"
+        description: "HTTP method of the call to mock"
+        example: "GET"
+      lookup:
+        $ref: "#/definitions/Lookup"
+      response:
+        $ref: "#/definitions/Response"
+  Lookup:
+    type: "object"
+    description: "Define additional requirements that must be present in a call to have a positive match."
+    properties:
+      header:
+        type: "object"
+        description: "Key value pair headers that must be present for the call to match"
+        example: {
+          "headerKey": "valueAsString MUST be present to match",
+          "rule": "header items not present in the header dictionary are ignored"
+        }
+      path:
+        type: "object"
+        description: "Key value pair to optionally replace path componenet starting with `:`. SEE CallInfo for more details"
+        example: {
+          ":replaceOnKey": "matchOnlyWithThisString",
+          ":replace": "some_id"
+        }
+      query:
+        type: "object"
+        description: "Key value pair query item that must be present for the call to match"
+        example: {
+          "queryKey": "valueAsString MUST be present to match",
+          "rule": "query items not present in the query dictionary are ignored"
+        }
+  Response:
+    type: "object"
+    description: "Define the HTTP response to return on a positive match."
+    properties:
+      status:
+        type: "integer"
+        description: "HTTP status code to return"
+        default: 200
+        example: 201
+      headers:
+        type: "object"
+        description: "Headers to add to the response"
+        example: {
+          "rule-headers": "All key value pairs in headers dictionary will be added to the response headers",
+          "Content-Type": "Can be specified, if not will be infered base on response.body.",
+          "Set-Cookie": "Cookie1=1; Domain=cookie1; Secure; HttpOnly"
+        }
+      body:
+        type: "string"
+        description: "Body type can be string or JSON object or JSON array"
+        example: "text/plain and application/json are supported formats. For JSON use a JSON object or JSON array instead of a string here"
