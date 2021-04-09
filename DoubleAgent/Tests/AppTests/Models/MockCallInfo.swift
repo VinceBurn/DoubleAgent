@@ -48,10 +48,11 @@ extension CallLookup
     static func stub(
         path: [String: String]? = nil,
         query: [String: String]? = nil,
-        headers: HTTPHeaders? = nil
+        headers: HTTPHeaders? = nil,
+        body: String? = nil
     ) -> CallLookup
     {
-        return CallLookup(path: path, query: query, headers: headers)
+        return CallLookup(path: path, query: query, headers: headers, body: body)
     }
 }
 

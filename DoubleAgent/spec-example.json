@@ -11,7 +11,8 @@
     },
     "query": {
       "queryKey": "valueAsString_MUST_be_present_to_match",
-    }
+    },
+    "body": "{\"key\":\"Some escaped JSON in a String or a plain String\"}"
   },
   "response": {
     "status": 201,

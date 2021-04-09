@@ -12,6 +12,7 @@ class MocksServerTestCase: XCTestCase
 {
     var app: Application!
     var contentTypeJSON: HTTPHeaders { ["Content-Type": "application/json"] }
+    var contentTypeTextPlain: HTTPHeaders { ["Content-Type": "text/plain"] }
 
     override func setUpWithError() throws
     {

@@ -79,15 +79,16 @@ public struct CallLookup: Content
     var path: [String: String]?
     var query: [String: String]?
     var headers: HTTPHeaders?
-    // let body ????
+    var body: String?
 
-    var count: Int { (query?.count ?? 0) + (headers?.count ?? 0) }
+    var weight: Int { (query?.count ?? 0) + (headers?.count ?? 0) + (body == nil ? 0 : 9999) }
 
-    init(path: [String: String]?, query: [String: String]?, headers: HTTPHeaders?)
+    init(path: [String: String]?, query: [String: String]?, headers: HTTPHeaders?, body: String?)
     {
         self.path = path
         self.query = query
         self.headers = headers
+        self.body = body
     }
 }
 
