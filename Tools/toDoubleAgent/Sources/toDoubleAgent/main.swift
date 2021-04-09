@@ -115,7 +115,10 @@ func jsonURLsAt(_ url: URL) throws -> [URL]
         includingPropertiesForKeys: nil,
         options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
     )
-    let jsonURLs = folderContent.filter { $0.pathExtension.lowercased() == "json" }
+    let jsonURLs =
+        try folderContent
+            .filter { $0.pathExtension.lowercased() == "json" }
+            .map { try URL(resolvingAliasFileAt: $0) }
     return jsonURLs
 }
 
