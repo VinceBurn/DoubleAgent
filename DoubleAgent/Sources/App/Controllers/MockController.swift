@@ -89,10 +89,11 @@ final class MockController
                     .filter { self.isPath(inputPaths, matching: $0.sanitizedPath.pathComponents) }
                     .filter { self.isQuery(request.query, matching: $0.lookup?.query) }
                     .filter { self.isHeaders(request.headers, matching: $0.lookup?.headers) }
+                    .filter { self.isBody(request, matching: $0.lookup?.body) }
                 let exactMatches = matches.filter { $0.sanitizedPath == sanitizedPath }
                 if !exactMatches.isEmpty { matches = exactMatches }
-                let maxCount = matches.reduce(0) { acc, call in max(acc, call.lookup?.count ?? 0) }
-                matches = matches.filter { ($0.lookup?.count ?? 0) == maxCount }
+                let maxCount = matches.reduce(0) { acc, call in max(acc, call.lookup?.weight ?? 0) }
+                matches = matches.filter { ($0.lookup?.weight ?? 0) == maxCount }
 
                 if matches.isEmpty { throw Abort(.notFound) }
                 // TODO: Revisit the return value, maybe send ids or resolution info, for resolution debugging purposes
@@ -170,6 +171,23 @@ final class MockController
             let expectedValue = headers[header.name]
             return expectedValue.contains(header.value)
         }
+    }
+
+    private func isBody(_ request: Request?, matching requirements: String?) -> Bool
+    {
+        guard let bodyString = request?.body.string,
+              let requirements = requirements
+        else { return true }
+
+        if let bodyData = bodyString.data(using: .utf8),
+           let reqData = requirements.data(using: .utf8),
+           let body = try? JSONSerialization.jsonObject(with: bodyData, options: []) as? NSObject,
+           let req = try? JSONSerialization.jsonObject(with: reqData, options: []) as? NSObject
+        {
+            // AnyCodable equality don't play well with JSON objects
+            return body.isEqual(req)
+        }
+        else { return bodyString == requirements }
     }
 }
 

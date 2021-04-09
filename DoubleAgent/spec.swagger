@@ -96,6 +96,10 @@ definitions:
           "queryKey": "valueAsString MUST be present to match",
           "rule": "query items not present in the query dictionary are ignored"
         }
+      body:
+        type: "string"
+        description: "A plain string or the string representation of JSON. If the string can be interpreted as valid JSON It will and equality will be based on JSON not on the exact String\nThe whole budy must match, there is NO partial matching."
+        example: "{\"key\":\"Some escaped JSON in a String or a plain String\"}"
   Response:
     type: "object"
     description: "Define the HTTP response to return on a positive match."

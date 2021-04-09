@@ -10,22 +10,51 @@ import Codability
 import XCTVapor
 
 // deal with basiAuth header ??
-// Add Matching on request body, like in a post with json or text, use content-type to match
 // improve multiple match error, to help diagnostic the input data set
 // improve not found error to include request information
 
+extension Data
+{
+    var byteBuffer: ByteBuffer { ByteBuffer(data: self) }
+}
+
 final class MocksServerLookupTest: MocksServerTestCase
 {
+    struct JSONBodies: Codable
+    {
+        let bodies: [JSONBody]
+        init(bodies: [JSONBody]) { self.bodies = bodies }
+    }
+
+    struct JSONBody: Codable
+    {
+        let id: String?
+        let isSomething: Bool?
+        let items: [String]
+
+        init(
+            id: String? = nil,
+            isSomething: Bool? = nil,
+            items: [String] = ["1", "2", "3"]
+        )
+        {
+            self.id = id
+            self.isSomething = isSomething
+            self.items = items
+        }
+    }
+
     func assertCall(
         _ method: HTTPMethod,
         _ path: String,
         headers: HTTPHeaders = [:],
+        body: Data? = nil,
         response responseBody: String,
         message: String = "",
         function: String = #function
     ) throws
     {
-        try app.test(method, path, headers: headers)
+        try app.test(method, path, headers: headers, body: body?.byteBuffer)
         { response in
             XCTAssertEqual(response.body.string, responseBody, "\(message) :: test -> \(function)")
         }
@@ -34,22 +63,24 @@ final class MocksServerLookupTest: MocksServerTestCase
     func assertErrorNotFound(
         _ method: HTTPMethod,
         _ path: String,
+        body: Data? = nil,
         message: String = "",
         function: String = #function
     ) throws
     {
-        try app.test(method, path) { XCTAssertEqual($0.status, .notFound, "\(message) :: test -> \(function)") }
+        try app.test(method, path, body: body?.byteBuffer) { XCTAssertEqual($0.status, .notFound, "\(message) :: test -> \(function)") }
     }
 
     func assertErrorConflict(
         _ method: HTTPMethod,
         _ path: String,
+        body: Data? = nil,
         headers: HTTPHeaders = [:],
         message: String = "",
         function: String = #function
     ) throws
     {
-        try app.test(method, path, headers: headers) { XCTAssertEqual($0.status, .conflict, "\(message) :: test -> \(function)") }
+        try app.test(method, path, headers: headers, body: body?.byteBuffer) { XCTAssertEqual($0.status, .conflict, "\(message) :: test -> \(function)") }
     }
 
     // MARK: - Matching on Path
@@ -209,5 +240,93 @@ final class MocksServerLookupTest: MocksServerTestCase
         let call2 = CallInfo.stub(path: "b", lookup: .stub(query: ["c": "3"]))
         try registerMocks([call1, call2])
         try assertErrorConflict(call1.method, "b?c=3", headers: ["d": "4"], message: "Multiple match is a conflict error")
+    }
+
+    // MARK: - Mathcing on Body
+    func assertMatchingBody(body: Data, headers: HTTPHeaders, message: String, testName: String = #function) throws
+    {
+        let lookup = CallLookup.stub(body: String(data: body, encoding: .utf8))
+        let call = CallInfo.stub(lookup: lookup, response: .stub(body: "ok"))
+        try registerMocks(call)
+        try assertCall(call.method, call.path, headers: headers, body: body, response: "ok", message: "\(message) :: \(testName)", function: "")
+    }
+
+    func test_givenLookupStringBody_whenNoBodyToMatch_thenNoMatch() throws
+    {
+        let lookup = CallLookup.stub(body: "bob")
+        let call = CallInfo.stub(lookup: lookup, response: .stub(body: "ok"))
+        try registerMocks(call)
+        try assertErrorNotFound(call.method, call.path, message: "Lookup body must be equal to have a match")
+    }
+
+    func test_givenStringBody_whenExactBody_thenMatch() throws
+    {
+        try assertMatchingBody(body: "bob".data(using: .utf8)!, headers: contentTypeTextPlain, message: "Plain Text Body matches when equals")
+    }
+
+    func test_givenJSONObjectBody_whenExactBody_thenMatch() throws
+    {
+        let body = try JSONEncoder().encode(JSONBody(id: "\(Int.random(in: 1 ... 234))", isSomething: false))
+        try assertMatchingBody(body: body, headers: contentTypeJSON, message: "Simple JSON object Matches when equals")
+    }
+
+    func test_givenJSONObjectBodyWithInnerJSON_whenExactBody_thenMatch() throws
+    {
+        let bodies = JSONBodies(bodies: [JSONBody(id: "\(Int.random(in: 1 ... 53))"), JSONBody(id: "2"), JSONBody(id: "3")])
+        let body = try JSONEncoder().encode(bodies)
+        try assertMatchingBody(body: body, headers: contentTypeJSON, message: "Complex JSON with inner JSON Array Matches when equals")
+    }
+
+    func test_givenJSONArrayBody_whenExactBody_thenMatch() throws
+    {
+        let matchingBody = [JSONBody(id: "\(Int.random(in: 1 ... 324))"), JSONBody(id: "2"), JSONBody(id: "3")]
+        let body = try JSONEncoder().encode(matchingBody)
+        try assertMatchingBody(body: body, headers: contentTypeJSON, message: "Root JSON Array Matches when Equals")
+    }
+
+    func test_givenJSONArrayBody_whenNotInSameOrder_thenNoMatch() throws
+    {
+        let lookupBody = try JSONEncoder().encode([JSONBody(id: "1"), JSONBody(id: "2")])
+        let outOfOrderBody = try JSONEncoder().encode([JSONBody(id: "2"), JSONBody(id: "1")])
+        let call = CallInfo.stub(lookup: .stub(body: String(data: lookupBody, encoding: .utf8)))
+        try registerMocks(call)
+        try assertErrorNotFound(call.method, call.path, body: outOfOrderBody, message: "Body JSON Array out of order Don't match")
+    }
+
+    func test_given2PossibleMatch_when1MatchOnBodyOtherOnMultipleOther_thenBodyMatchWins() throws
+    {
+        let body = try JSONEncoder().encode(JSONBody(id: "\(Int.random())"))
+        let lookupBodyCall = CallInfo.stub(lookup: .stub(body: String(data: body, encoding: .utf8)), response: .stub(body: "matchOnBody"))
+        let callWithout = CallInfo.stub(lookup: .stub(query: ["a": "a", "b": "b", "c": "c"], headers: contentTypeTextPlain), response: .stub(body: "matchOnQuery"))
+        try registerMocks([lookupBodyCall, callWithout])
+        try assertCall(
+            callWithout.method,
+            "\(callWithout.path)?a=a&b=b&c=c",
+            headers: contentTypeTextPlain,
+            body: body,
+            response: "matchOnBody",
+            message: "A matching body out weigth multiple query and headers match"
+        )
+    }
+
+    func test_when2MatchWithBody_thenOtherLookupItemCanBreakTheTie() throws
+    {
+        let body = try JSONEncoder().encode(JSONBody(id: "\(Int.random())"))
+        let bodyCall = CallInfo.stub(lookup: .stub(body: String(data: body, encoding: .utf8)), response: .stub(body: "onlyBodyMatch"))
+        let queryCall = CallInfo.stub(lookup: .stub(query: ["1": "a"], body: String(data: body, encoding: .utf8)), response: .stub(body: "QUERY"))
+        let headerCall = CallInfo.stub(lookup: .stub(headers: contentTypeTextPlain, body: String(data: body, encoding: .utf8)), response: .stub(body: "HEADER"))
+        try registerMocks([bodyCall, queryCall, headerCall])
+
+        try assertCall(bodyCall.method, "\(bodyCall.path)?1=a", headers: contentTypeJSON, body: body, response: "QUERY", message: "Query lookup can be added up to body match")
+        try assertCall(bodyCall.method, bodyCall.path, headers: contentTypeTextPlain, body: body, response: "HEADER", message: "Header lookup can be added up to body match")
+    }
+
+    func test_when2MatchingBody_thenDuplicateError() throws
+    {
+        let body = try JSONEncoder().encode(JSONBody(id: "\(Int.random())"))
+        let firstCall = CallInfo.stub(lookup: .stub(body: String(data: body, encoding: .utf8)), response: .stub(body: "first call"))
+        let secondCall = CallInfo.stub(lookup: .stub(body: String(data: body, encoding: .utf8)), response: .stub(body: "second call"))
+        try registerMocks([firstCall, secondCall])
+        try assertErrorConflict(firstCall.method, firstCall.path, body: body, message: "Same body match result in duplication error")
     }
 }
