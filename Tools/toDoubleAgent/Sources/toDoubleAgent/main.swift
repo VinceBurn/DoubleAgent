@@ -142,7 +142,7 @@ func mapIfNeeded(env: Env) throws
         return
     }
 
-    let mapFileURL = env.currentDirectory.appendingPathComponent(mapFileName)
+    let mapFileURL = try URL(resolvingAliasFileAt: env.currentDirectory.appendingPathComponent(mapFileName))
     print("Will Replace information in files based on map file: \(mapFileURL)")
     let inputLines = try String(contentsOf: mapFileURL, encoding: .utf8).components(separatedBy: .newlines)
     let mapLinesComponents: [[String]] = inputLines.compactMap
