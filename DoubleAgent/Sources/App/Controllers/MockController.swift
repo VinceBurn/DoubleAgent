@@ -83,7 +83,8 @@ final class MockController
             .filter(\.$pathCount == sanitizedPath.components(separatedBy: "/").count)
             .filter(\.$method == request.method)
             .all()
-            .flatMapThrowing({ calls -> UUID in
+            .flatMapThrowing
+            { calls -> UUID in
                 let inputPaths = sanitizedPath.pathComponents
                 var matches = calls
                     .filter { self.isPath(inputPaths, matching: $0.sanitizedPath.pathComponents) }
@@ -92,8 +93,8 @@ final class MockController
                     .filter { self.isBody(request, matching: $0.lookup?.body) }
                 let exactMatches = matches.filter { $0.sanitizedPath == sanitizedPath }
                 if !exactMatches.isEmpty { matches = exactMatches }
-                let maxCount = matches.reduce(0) { acc, call in max(acc, call.lookup?.weight ?? 0) }
-                matches = matches.filter { ($0.lookup?.weight ?? 0) == maxCount }
+                let maxWeight = matches.reduce(0) { acc, call in max(acc, call.lookup?.weight ?? 0) }
+                matches = matches.filter { ($0.lookup?.weight ?? 0) == maxWeight }
 
                 if matches.isEmpty { throw Abort(.notFound) }
                 // TODO: Revisit the return value, maybe send ids or resolution info, for resolution debugging purposes
@@ -101,7 +102,7 @@ final class MockController
 
                 guard let id = matches[0].id else { throw Abort(.notFound) }
                 return id
-            })
+            }
             .flatMap
             { id -> EventLoopFuture<DB.CallInfo> in
                 return DB.CallInfo.query(on: request.db)
@@ -152,25 +153,28 @@ final class MockController
     private func isQuery(_ query: URLQueryContainer, matching requirements: [String: String]?) -> Bool
     {
         guard let requirements = requirements else { return true }
-        return requirements.reduce(true, { acc, i in
-            guard
-                acc,
-                let expectedValue = query[String.self, at: i.key]?.removingPercentEncoding
-            else { return false }
-            return expectedValue == (i.value.removingPercentEncoding ?? i.value)
-        })
+        return requirements
+            .reduce(true)
+            { acc, i in
+                guard
+                    acc,
+                    let expectedValue = query[String.self, at: i.key]?.removingPercentEncoding
+                else { return false }
+                return expectedValue == (i.value.removingPercentEncoding ?? i.value)
+            }
     }
 
     private func isHeaders(_ headers: HTTPHeaders, matching requirements: HTTPHeaders?) -> Bool
     {
         guard let requirements = requirements else { return true }
-        return requirements.reduce(true)
-        { (acc, header) -> Bool in
-            guard acc else { return false }
+        return requirements
+            .reduce(true)
+            { (acc, header) -> Bool in
+                guard acc else { return false }
 
-            let expectedValue = headers[header.name]
-            return expectedValue.contains(header.value)
-        }
+                let expectedValue = headers[header.name]
+                return expectedValue.contains(header.value)
+            }
     }
 
     private func isBody(_ request: Request?, matching requirements: String?) -> Bool
