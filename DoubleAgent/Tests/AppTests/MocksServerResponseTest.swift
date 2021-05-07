@@ -131,11 +131,6 @@ final class MocksServerResponseTest: MocksServerTestCase
             })
     }
 
-//    ICITTE: "Set-Cookie" is not working properly
-//    "Set-Cookie": "TS01a599b6=0159c08fbda7071e87d806ef063135606dedb62709d7fa0b309c8bca461e057ab9021a0be5702af28cf2dd0a92794a090a3646dccdf53dd03ed502d61935588895e0efb1e6; path=/; domain=.virginmobile.ca; HTTPonly; Secure",
-//    "Set-Cookie": "TS012cb1fb=0159c08fbd149671cf2dd302a156eaad535785015de1d01f0e0cccb548fe612c685dc1eb4db143ab076dc72d0ac353c8901d69092f78c5716e411944da2ec267d2767c8e3e; Path=/; Secure; HTTPOnly",
-//    "Set-Cookie": "SMSESSION=%%username%%_SMSESSIONcookie==; Domain=.virginmobile.ca; Path=/; Secure; HttpOnly"
-
     func test_givenMockResponseWithBody_whenReturned_contentTypeInferredFromBody() throws
     {
         let inputs: [(body: AnyCodable, type: HTTPMediaType, route: String)] = [
