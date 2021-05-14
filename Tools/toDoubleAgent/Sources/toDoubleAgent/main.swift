@@ -281,7 +281,13 @@ func uploadAPIResponses(env: Env) throws
 
             if let httpResponse = response as? HTTPURLResponse
             {
-                print("Response: \(httpResponse.statusCode)")
+                switch httpResponse.statusCode
+                {
+                case 200:
+                    print("Response: \(httpResponse.statusCode)")
+                default:
+                    print("🛑 ❌ Response: \(httpResponse.statusCode) ‼️ ")
+                }
                 if env.isVerbose
                 {
                     print("------")
