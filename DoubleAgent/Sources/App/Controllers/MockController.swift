@@ -97,8 +97,14 @@ final class MockController
                 matches = matches.filter { ($0.lookup?.weight ?? 0) == maxWeight }
 
                 if matches.isEmpty { throw Abort(.notFound) }
-                // TODO: Revisit the return value, maybe send ids or resolution info, for resolution debugging purposes
-                else if matches.count > 1 { throw Abort(.conflict, reason: "Multiple Response Matches") }
+                else if matches.count > 1
+                {
+                    throw ConflictError(
+                        reason: "Found Multiple Responses Matches",
+                        requestToMatch: ConflictError.RequestSummary(request),
+                        conflictingMatches: matches.map(ConflictError.CallInfoSummary.init)
+                    )
+                }
 
                 guard let id = matches[0].id else { throw Abort(.notFound) }
                 return id
@@ -129,6 +135,20 @@ final class MockController
                 )
             }
             .flatMap { request.eventLoop.makeSucceededFuture($0) }
+            .flatMapErrorThrowing
+            { error in
+                guard let conflictError = error as? ConflictError else { throw error }
+                var buffer = ByteBuffer()
+                var headers = HTTPHeaders()
+                let encoder = try ContentConfiguration.default().requireEncoder(for: .json)
+                try encoder.encode(conflictError, to: &buffer, headers: &headers)
+                return Response(
+                    status: .conflict,
+                    version: .http1_1,
+                    headers: headers,
+                    body: .init(buffer: buffer)
+                )
+            }
     }
 
     private func isPath(_ path: [PathComponent], matching possible: [PathComponent]) -> Bool

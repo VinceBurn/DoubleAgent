@@ -30,6 +30,49 @@ func resolve(path: String, mapping: [String: String]?) -> String
         .string
 }
 
+public struct ConflictError: Error, Content
+{
+    public struct CallInfoSummary: Content
+    {
+        let callInfoID: UUID?
+        let path: String
+        let method: HTTPMethod
+        let lookup: CallLookup?
+
+        init(_ info: DB.CallInfo)
+        {
+            callInfoID = info.id
+            path = info.path
+            method = info.method
+            lookup = info.lookup
+        }
+    }
+
+    public struct RequestSummary: Content
+    {
+        let method: HTTPMethod
+        let url: String
+        let headers: HTTPHeaders
+
+        init(_ request: Request)
+        {
+            method = request.method
+            url = sanitized(path: request.url.string)
+            headers = request.headers
+        }
+    }
+
+    let error = true
+    let reason: String
+    let requestToMatch: RequestSummary
+    let conflictingMatches: [CallInfoSummary]
+
+    enum CodingKeys: CodingKey
+    {
+        case error, reason, requestToMatch, conflictingMatches
+    }
+}
+
 public struct CallInfo: Content
 {
     var id: UUID?
@@ -74,7 +117,7 @@ public struct CallInfo: Content
     }
 }
 
-public struct CallLookup: Content
+public struct CallLookup: Content, Equatable
 {
     var path: [String: String]?
     var query: [String: String]?
