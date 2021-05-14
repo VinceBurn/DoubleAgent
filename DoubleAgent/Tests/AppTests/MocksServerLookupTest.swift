@@ -10,7 +10,6 @@ import Codability
 import XCTVapor
 
 // deal with basiAuth header ??
-// improve multiple match error, to help diagnostic the input data set
 // improve not found error to include request information
 
 extension Data
@@ -80,7 +79,22 @@ final class MocksServerLookupTest: MocksServerTestCase
         function: String = #function
     ) throws
     {
-        try app.test(method, path, headers: headers, body: body?.byteBuffer) { XCTAssertEqual($0.status, .conflict, "\(message) :: test -> \(function)") }
+        try app.test(method, path, headers: headers, body: body?.byteBuffer)
+        {
+            try assertBaseMultipleMatchError(in: $0, function: function)
+        }
+    }
+
+    func assertBaseMultipleMatchError(in response: XCTHTTPResponse, function: String = #function) throws
+    {
+        let data = Data(buffer: response.body)
+        let jsonObject = try JSONSerialization.jsonObject(with: data, options: [])
+        let errorDic = try XCTUnwrap(jsonObject as? NSDictionary)
+        print(response.headers)
+        XCTAssertEqual(response.content.contentType, .json, "Error has JSON content")
+        XCTAssertEqual(response.status, .conflict, "Multiple Match result in `conflict` status [\(function)]")
+        XCTAssertEqual(errorDic["error"] as? Bool, true, "response body has field: error == true [\(function)]")
+        XCTAssertEqual(errorDic["reason"] as? String, "Found Multiple Responses Matches", "response body has specific reason message [\(function)]")
     }
 
     // MARK: - Matching on Path
@@ -328,5 +342,78 @@ final class MocksServerLookupTest: MocksServerTestCase
         let secondCall = CallInfo.stub(lookup: .stub(body: String(data: body, encoding: .utf8)), response: .stub(body: "second call"))
         try registerMocks([firstCall, secondCall])
         try assertErrorConflict(firstCall.method, firstCall.path, body: body, message: "Same body match result in duplication error")
+    }
+
+    // MARK: - Conflict Error Content
+    func test_whenConflictError_thenRetrunConflictingMatchesInformations() throws
+    {
+        func assert_infoSummary(for call: CallInfo, in error: ConflictError) throws
+        {
+            let summary = try XCTUnwrap(
+                error.conflictingMatches.first(where: { sum in
+                    guard let idString = sum.callInfoID else { return false }
+                    return idString == call.id
+                }),
+                "An InfoSummary mathching the CallInfo is returned in the error"
+            )
+            XCTAssertEqual(summary.path, resolve(path: call.path, mapping: call.lookup?.path), "Path in summary is same as in call (resolved)")
+            XCTAssertEqual(summary.method, call.method, "Method in summary is same as in call")
+            XCTAssertEqual(summary.lookup, call.lookup, "Lookup in summary is same as in call")
+        }
+
+        let conflict1 = CallInfo.stub(
+            id: UUID(),
+            path: "p/:a/b",
+            method: .PUT,
+            lookup: .stub(
+                path: [":a": "a"],
+                query: ["r2": "d2"],
+                headers: ["h1": "big"]
+            )
+        )
+        let conflict2 = CallInfo.stub(
+            id: UUID(),
+            path: "p/a/:b",
+            method: .PUT,
+            lookup: .stub(
+                path: [":b": "b"],
+                query: ["c3": "po"],
+                headers: ["p": "par"]
+            )
+        )
+        let notInConflict = CallInfo.stub(path: "other/path/NOT/conflicting")
+        try registerMocks([conflict1, notInConflict, conflict2])
+
+        try app.test(
+            conflict1.method,
+            "p/a/b?c3=po&r2=d2",
+            headers: ["h1": "big", "p": "par"],
+            afterResponse: { response in
+                let error = try response.content.decode(ConflictError.self)
+
+                try assertBaseMultipleMatchError(in: response)
+                XCTAssertEqual(error.conflictingMatches.count, 2, "Number of conflicting matches")
+                try assert_infoSummary(for: conflict1, in: error)
+                try assert_infoSummary(for: conflict2, in: error)
+            }
+        )
+    }
+
+    func test_whenConflictError_thenReturnInformationAboutTheRequestGeneratingTheConflict() throws
+    {
+        let callReference = CallInfo.stub(path: "a/valid/path", method: .DELETE)
+        let call2 = callReference
+        try registerMocks([callReference, call2])
+
+        try app.test(callReference.method, "a/valid/path", headers: ["h1": "1"], afterResponse: { response in
+            let error = try response.content.decode(ConflictError.self)
+            let requestSummary = error.requestToMatch
+
+            XCTAssertEqual(requestSummary.method, callReference.method, "Used method is returned")
+            XCTAssertEqual(requestSummary.url, "a/valid/path", "Path of the request is returned")
+            XCTAssertEqual(requestSummary.headers.count, 2)
+            XCTAssertEqual(requestSummary.headers["h1"], ["1"], "Custom provided header info is returned")
+            XCTAssertTrue(requestSummary.headers.contains(name: "content-length"), "System added header")
+        })
     }
 }
