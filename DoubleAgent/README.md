@@ -11,7 +11,7 @@ Create    | POST     | mocks
 Get All   | GET      | mocks
 Reset All | DELETE   | mocks/resetAll
 
-For more details see (spec.swagger)[./spec.swagger] or (spec-example.json)[./spec-example.json]
+For more details see  [spec.swagger](spec.swagger) or [spec-example.json](./spec-example.json)
 
 ## toDoubleAgent
 
